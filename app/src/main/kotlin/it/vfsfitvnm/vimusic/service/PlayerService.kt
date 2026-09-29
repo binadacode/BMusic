@@ -743,7 +743,8 @@ class PlayerService : InvincibleService(), Player.Listener, PlaybackStatsListene
                 DefaultHttpDataSource.Factory()
                     .setConnectTimeoutMs(16000)
                     .setReadTimeoutMs(8000)
-                    .setUserAgent("Mozilla/5.0 (Windows NT 10.0; rv:91.0) Gecko/20100101 Firefox/91.0")
+                    .setAllowCrossProtocolRedirects(true)
+                    .setUserAgent(it.vfsfitvnm.innertube.models.Context.Ios.client.userAgent)
             )
         }
     }
