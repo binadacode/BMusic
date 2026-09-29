@@ -43,6 +43,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.cache.Cache
@@ -744,14 +745,24 @@ class PlayerService : InvincibleService(), Player.Listener, PlaybackStatsListene
                     .setConnectTimeoutMs(16000)
                     .setReadTimeoutMs(8000)
                     .setAllowCrossProtocolRedirects(true)
-                    .setUserAgent(it.vfsfitvnm.innertube.models.Context.Ios.client.userAgent)
+                    .setDefaultRequestProperties(
+                        it.vfsfitvnm.innertube.models.Context.AndroidVr.client.userAgent
+                            ?.let { userAgent -> mapOf("User-Agent" to userAgent) }
+                            .orEmpty()
+                    )
             )
         }
     }
 
+    private fun DataSpec.withStreamSource(source: StreamSource): DataSpec =
+        withUri(source.uri).withRequestHeaders(
+            httpRequestHeaders + (source.userAgent?.let { mapOf("User-Agent" to it) }
+                ?: emptyMap())
+        )
+
     private fun createDataSourceFactory(): DataSource.Factory {
         val chunkLength = 512 * 1024L
-        val ringBuffer = RingBuffer<Pair<String, Uri>?>(2) { null }
+        val ringBuffer = RingBuffer<Pair<String, StreamSource>?>(2) { null }
 
         return ResolvingDataSource.Factory(createCacheDataSource()) { dataSpec ->
             val videoId = dataSpec.key ?: error("A key must be set")
@@ -760,12 +771,12 @@ class PlayerService : InvincibleService(), Player.Listener, PlaybackStatsListene
                 dataSpec
             } else {
                 when (videoId) {
-                    ringBuffer.getOrNull(0)?.first -> dataSpec.withUri(ringBuffer.getOrNull(0)!!.second)
-                    ringBuffer.getOrNull(1)?.first -> dataSpec.withUri(ringBuffer.getOrNull(1)!!.second)
+                    ringBuffer.getOrNull(0)?.first -> dataSpec.withStreamSource(ringBuffer.getOrNull(0)!!.second)
+                    ringBuffer.getOrNull(1)?.first -> dataSpec.withStreamSource(ringBuffer.getOrNull(1)!!.second)
                     else -> {
                         val urlResult = runBlocking(Dispatchers.IO) {
                             Innertube.player(PlayerBody(videoId = videoId))
-                        }?.mapCatching { body ->
+                        }?.mapCatching { (body, context) ->
                             if (body.videoDetails?.videoId != videoId) {
                                 throw VideoIdMismatchException()
                             }
@@ -804,7 +815,12 @@ class PlayerService : InvincibleService(), Player.Listener, PlaybackStatsListene
                                         )
                                     }
 
-                                    format.url
+                                    format.url?.let { url ->
+                                        StreamSource(
+                                            uri = url.toUri(),
+                                            userAgent = context.client.userAgent
+                                        )
+                                    }
                                 } ?: throw PlayableFormatNotFoundException()
 
                                 "UNPLAYABLE" -> throw UnplayableException()
@@ -817,9 +833,9 @@ class PlayerService : InvincibleService(), Player.Listener, PlaybackStatsListene
                             }
                         }
 
-                        urlResult?.getOrThrow()?.let { url ->
-                            ringBuffer.append(videoId to url.toUri())
-                            dataSpec.withUri(url.toUri())
+                        urlResult?.getOrThrow()?.let { source ->
+                            ringBuffer.append(videoId to source)
+                            dataSpec.withStreamSource(source)
                                 .subrange(dataSpec.uriPositionOffset, chunkLength)
                         } ?: throw PlaybackException(
                             null,
@@ -979,6 +995,8 @@ class PlayerService : InvincibleService(), Player.Listener, PlaybackStatsListene
             context.stopService(context.intent<PlayerService>())
         }
     }
+
+    private data class StreamSource(val uri: Uri, val userAgent: String?)
 
     @JvmInline
     private value class Action(val value: String) {

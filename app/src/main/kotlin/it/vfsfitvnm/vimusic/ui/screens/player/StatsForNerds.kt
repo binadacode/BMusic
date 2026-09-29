@@ -75,7 +75,7 @@ fun StatsForNerds(
                     binder.player.currentMediaItem?.takeIf { it.mediaId == mediaId }?.let { mediaItem ->
                         withContext(Dispatchers.IO) {
                             delay(2000)
-                            Innertube.player(PlayerBody(videoId = mediaId))?.onSuccess { response ->
+                            Innertube.player(PlayerBody(videoId = mediaId))?.onSuccess { (response, _) ->
                                 response.streamingData?.highestQualityFormat?.let { format ->
                                     Database.insert(mediaItem)
                                     Database.insert(
